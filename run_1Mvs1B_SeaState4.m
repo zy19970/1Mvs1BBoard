@@ -8,7 +8,7 @@ function results = run_1Mvs1B_SeaState4()
 % It is intended for engineering comparison and presentation, not for class
 % approval or replacement of vessel-specific model tests/CFD/RAO data.
 %
-% The model contains only ONE public entry function. All helper functions are
+% The model contains ONE public entry function. All helper functions are
 % local functions in this file.
 %
 % Simulated rotational DOFs:
@@ -37,10 +37,13 @@ function results = run_1Mvs1B_SeaState4()
 %   hull-size/inertia effect. For a named real vessel, replace the dimensions,
 %   GM, damping and RAO/hydrodynamic coefficients with measured/model-test data.
 %
-% Output:
-%   - one figure with roll/pitch/yaw comparison curves
-%   - PNG: SeaState4_10000t_vs_100t_3DOF.png
-%   - returned struct containing time histories, environment and model data
+% Every run generates EXACTLY TWO PNG figures:
+%   1) SeaState4_10000t_vs_100t_Academic.png
+%      Academic/technical view: local raw histories + full-duration moving RMS
+%      + RMS / peak / 95% absolute-response metrics.
+%   2) SeaState4_10000t_vs_100t_Brief.png
+%      Presentation view: smooth full-duration moving-RMS curves with direct
+%      large-vs-small response ratios for rapid visual comparison.
 %
 % Reproducible seed: 20260916
 
@@ -99,43 +102,16 @@ smallDeg.roll  = motionSmall.roll  * rad2deg_;
 smallDeg.pitch = motionSmall.pitch * rad2deg_;
 smallDeg.yaw   = motionSmall.yaw   * rad2deg_;
 
-%% 6. Plot one figure with all three rotational DOFs
-fig = figure('Color', 'w', 'Position', [80 60 1320 900]);
-largeColor = [0.10 0.32 0.68];
-smallColor = [0.90 0.32 0.08];
+%% 6. Calculate summary metrics once and generate TWO figures
+metrics = calculate_metrics(largeDeg, smallDeg);
 
-ax1 = subplot(3,1,1);
-plot(t, largeDeg.roll, 'LineWidth', 1.35, 'Color', largeColor); hold on;
-plot(t, smallDeg.roll, 'LineWidth', 1.10, 'Color', smallColor);
-grid on; box on;
-ylabel('横摇 / deg');
-title('横摇 Roll');
-legend(large.name, small.name, 'Location', 'best');
+academicFile = 'SeaState4_10000t_vs_100t_Academic.png';
+briefFile = 'SeaState4_10000t_vs_100t_Brief.png';
 
-ax2 = subplot(3,1,2);
-plot(t, largeDeg.pitch, 'LineWidth', 1.35, 'Color', largeColor); hold on;
-plot(t, smallDeg.pitch, 'LineWidth', 1.10, 'Color', smallColor);
-grid on; box on;
-ylabel('纵摇 / deg');
-title('纵摇 Pitch');
-
-ax3 = subplot(3,1,3);
-plot(t, largeDeg.yaw, 'LineWidth', 1.35, 'Color', largeColor); hold on;
-plot(t, smallDeg.yaw, 'LineWidth', 1.10, 'Color', smallColor);
-grid on; box on;
-ylabel('艏摇 / deg');
-xlabel('时间 / s');
-title('艏摇 / 偏航 Yaw');
-
-linkaxes([ax1 ax2 ax3], 'x');
-xlim([0 Tsim]);
-
-sgtitle(sprintf(['四级海况：一万吨级船舶 vs 一百吨级船舶 3-DOF运动对比\n' ...
-    '斜向风浪 + 长周期涌浪 + 潮汐低频项 + 瞬态浪涌 + 二阶漂移；实现 H_s = %.2f m'], ...
-    HsRealized), 'FontWeight', 'bold');
-
-set(fig, 'PaperPositionMode', 'auto');
-print(fig, 'SeaState4_10000t_vs_100t_3DOF.png', '-dpng', '-r220');
+plot_academic_figure(t, largeDeg, smallDeg, large, small, ...
+    metrics, HsRealized, Tsim, dt, academicFile);
+plot_brief_figure(t, largeDeg, smallDeg, large, small, ...
+    metrics, HsRealized, Tsim, dt, briefFile);
 
 %% 7. Summary metrics
 fprintf('\n==============================================================\n');
@@ -151,7 +127,8 @@ print_metric_line('艏摇 Yaw  ', largeDeg.yaw,   smallDeg.yaw);
 fprintf('--------------------------------------------------------------\n');
 fprintf('Large ship roll natural period  = %.2f s\n', large.roll.Tn);
 fprintf('Small ship roll natural period  = %.2f s\n', small.roll.Tn);
-fprintf('Output figure: SeaState4_10000t_vs_100t_3DOF.png\n');
+fprintf('Figure 1 (academic): %s\n', academicFile);
+fprintf('Figure 2 (brief):    %s\n', briefFile);
 fprintf('==============================================================\n\n');
 
 %% 8. Return complete result struct
@@ -163,6 +140,8 @@ results.meta.rho = rho;
 results.meta.g = g;
 results.meta.note = ['Representative engineering simulation, not vessel-specific ' ...
     'certification/model-test data.'];
+results.meta.outputFiles.academic = academicFile;
+results.meta.outputFiles.brief = briefFile;
 
 results.environment.t = t;
 results.environment.eta = eta;
@@ -185,6 +164,255 @@ results.small.pitch_deg = smallDeg.pitch;
 results.small.yaw_deg = smallDeg.yaw;
 results.small.excitation = qSmall;
 
+results.metrics = metrics;
+
+end
+
+%% ========================================================================
+function plot_academic_figure(t, largeDeg, smallDeg, large, small, ...
+    metrics, HsRealized, Tsim, dt, outputFile)
+% Technical view:
+% Left column  = 0-180 s raw time histories for actual motion detail.
+% Right column = 30 s moving RMS across the complete 900 s simulation.
+% Each raw panel reports global RMS, absolute peak and 95% |response|.
+
+largeColor = [0.10 0.32 0.68];
+smallColor = [0.90 0.32 0.08];
+zoomEnd = min(180, Tsim);
+idx = t <= zoomEnd;
+winSec = 30;
+nwin = max(5, round(winSec/dt));
+
+rollRmsLarge  = moving_rms(largeDeg.roll,  nwin);
+rollRmsSmall  = moving_rms(smallDeg.roll,  nwin);
+pitchRmsLarge = moving_rms(largeDeg.pitch, nwin);
+pitchRmsSmall = moving_rms(smallDeg.pitch, nwin);
+yawRmsLarge   = moving_rms(largeDeg.yaw,   nwin);
+yawRmsSmall   = moving_rms(smallDeg.yaw,   nwin);
+
+fig = figure('Color', 'w', 'Position', [60 35 1500 930]);
+
+% ---------------- Roll ----------------
+subplot(3,2,1);
+plot(t(idx), largeDeg.roll(idx), 'LineWidth', 1.35, 'Color', largeColor); hold on;
+plot(t(idx), smallDeg.roll(idx), 'LineWidth', 1.00, 'Color', smallColor);
+grid on; box on;
+xlim([0 zoomEnd]);
+ylim(expand_ylim([largeDeg.roll(idx), smallDeg.roll(idx)], 0.08));
+ylabel('横摇 / deg');
+title('横摇 Roll：局部原始时程');
+legend(large.name, small.name, 'Location', 'best');
+text(0.985, 0.04, metric_text(metrics.roll), 'Units', 'normalized', ...
+    'HorizontalAlignment', 'right', 'VerticalAlignment', 'bottom', ...
+    'BackgroundColor', 'w', 'EdgeColor', [0.75 0.75 0.75], 'Margin', 4, ...
+    'FontSize', 8.5);
+
+subplot(3,2,2);
+plot(t, rollRmsLarge, 'LineWidth', 1.9, 'Color', largeColor); hold on;
+plot(t, rollRmsSmall, 'LineWidth', 1.9, 'Color', smallColor);
+grid on; box on;
+xlim([0 Tsim]);
+ylim([0, positive_upper([rollRmsLarge, rollRmsSmall])]);
+ylabel('滑动 RMS / deg');
+title(sprintf('横摇 Roll：全时程滑动 RMS（%d s窗口）', winSec));
+
+% ---------------- Pitch ----------------
+subplot(3,2,3);
+plot(t(idx), largeDeg.pitch(idx), 'LineWidth', 1.35, 'Color', largeColor); hold on;
+plot(t(idx), smallDeg.pitch(idx), 'LineWidth', 1.00, 'Color', smallColor);
+grid on; box on;
+xlim([0 zoomEnd]);
+ylim(expand_ylim([largeDeg.pitch(idx), smallDeg.pitch(idx)], 0.08));
+ylabel('纵摇 / deg');
+title('纵摇 Pitch：局部原始时程');
+text(0.985, 0.04, metric_text(metrics.pitch), 'Units', 'normalized', ...
+    'HorizontalAlignment', 'right', 'VerticalAlignment', 'bottom', ...
+    'BackgroundColor', 'w', 'EdgeColor', [0.75 0.75 0.75], 'Margin', 4, ...
+    'FontSize', 8.5);
+
+subplot(3,2,4);
+plot(t, pitchRmsLarge, 'LineWidth', 1.9, 'Color', largeColor); hold on;
+plot(t, pitchRmsSmall, 'LineWidth', 1.9, 'Color', smallColor);
+grid on; box on;
+xlim([0 Tsim]);
+ylim([0, positive_upper([pitchRmsLarge, pitchRmsSmall])]);
+ylabel('滑动 RMS / deg');
+title(sprintf('纵摇 Pitch：全时程滑动 RMS（%d s窗口）', winSec));
+
+% ---------------- Yaw ----------------
+subplot(3,2,5);
+plot(t(idx), largeDeg.yaw(idx), 'LineWidth', 1.35, 'Color', largeColor); hold on;
+plot(t(idx), smallDeg.yaw(idx), 'LineWidth', 1.00, 'Color', smallColor);
+grid on; box on;
+xlim([0 zoomEnd]);
+ylim(expand_ylim([largeDeg.yaw(idx), smallDeg.yaw(idx)], 0.08));
+ylabel('艏摇 / deg');
+xlabel('时间 / s');
+title('艏摇 / 偏航 Yaw：局部原始时程');
+text(0.985, 0.04, metric_text(metrics.yaw), 'Units', 'normalized', ...
+    'HorizontalAlignment', 'right', 'VerticalAlignment', 'bottom', ...
+    'BackgroundColor', 'w', 'EdgeColor', [0.75 0.75 0.75], 'Margin', 4, ...
+    'FontSize', 8.5);
+
+subplot(3,2,6);
+plot(t, yawRmsLarge, 'LineWidth', 1.9, 'Color', largeColor); hold on;
+plot(t, yawRmsSmall, 'LineWidth', 1.9, 'Color', smallColor);
+grid on; box on;
+xlim([0 Tsim]);
+ylim([0, positive_upper([yawRmsLarge, yawRmsSmall])]);
+ylabel('滑动 RMS / deg');
+xlabel('时间 / s');
+title(sprintf('艏摇 / 偏航 Yaw：全时程滑动 RMS（%d s窗口）', winSec));
+
+sgtitle(sprintf(['四级海况 3-DOF 技术对比：一万吨级船舶 vs 一百吨级船舶\n' ...
+    '左列为局部原始时程，右列为全时程滑动RMS；H_s = %.2f m'], ...
+    HsRealized), 'FontWeight', 'bold');
+
+set(fig, 'PaperPositionMode', 'auto');
+print(fig, outputFile, '-dpng', '-r220');
+end
+
+%% ========================================================================
+function plot_brief_figure(t, largeDeg, smallDeg, large, small, ...
+    metrics, HsRealized, Tsim, dt, outputFile)
+% Presentation view:
+% Only smooth full-duration motion-intensity curves are shown. This avoids
+% the raw high-frequency trace becoming visually dense over 900 seconds.
+% A 45 s moving RMS is used to emphasize the engineering conclusion.
+
+largeColor = [0.10 0.32 0.68];
+smallColor = [0.90 0.32 0.08];
+winSec = 45;
+nwin = max(5, round(winSec/dt));
+
+rollLarge  = moving_rms(largeDeg.roll, nwin);
+rollSmall  = moving_rms(smallDeg.roll, nwin);
+pitchLarge = moving_rms(largeDeg.pitch, nwin);
+pitchSmall = moving_rms(smallDeg.pitch, nwin);
+yawLarge   = moving_rms(largeDeg.yaw, nwin);
+yawSmall   = moving_rms(smallDeg.yaw, nwin);
+
+fig = figure('Color', 'w', 'Position', [80 45 1420 900]);
+
+subplot(3,1,1);
+plot(t, rollLarge, 'LineWidth', 2.15, 'Color', largeColor); hold on;
+plot(t, rollSmall, 'LineWidth', 2.15, 'Color', smallColor);
+grid on; box on;
+xlim([0 Tsim]);
+ylim([0, positive_upper([rollLarge, rollSmall])]);
+ylabel('横摇 RMS / deg');
+title('横摇 Roll');
+legend(large.name, small.name, 'Location', 'best');
+text(0.985, 0.92, ratio_text(metrics.roll), 'Units', 'normalized', ...
+    'HorizontalAlignment', 'right', 'VerticalAlignment', 'top', ...
+    'FontWeight', 'bold', 'FontSize', 11, 'BackgroundColor', 'w', ...
+    'EdgeColor', [0.70 0.70 0.70], 'Margin', 5);
+
+subplot(3,1,2);
+plot(t, pitchLarge, 'LineWidth', 2.15, 'Color', largeColor); hold on;
+plot(t, pitchSmall, 'LineWidth', 2.15, 'Color', smallColor);
+grid on; box on;
+xlim([0 Tsim]);
+ylim([0, positive_upper([pitchLarge, pitchSmall])]);
+ylabel('纵摇 RMS / deg');
+title('纵摇 Pitch');
+text(0.985, 0.92, ratio_text(metrics.pitch), 'Units', 'normalized', ...
+    'HorizontalAlignment', 'right', 'VerticalAlignment', 'top', ...
+    'FontWeight', 'bold', 'FontSize', 11, 'BackgroundColor', 'w', ...
+    'EdgeColor', [0.70 0.70 0.70], 'Margin', 5);
+
+subplot(3,1,3);
+plot(t, yawLarge, 'LineWidth', 2.15, 'Color', largeColor); hold on;
+plot(t, yawSmall, 'LineWidth', 2.15, 'Color', smallColor);
+grid on; box on;
+xlim([0 Tsim]);
+ylim([0, positive_upper([yawLarge, yawSmall])]);
+ylabel('艏摇 RMS / deg');
+xlabel('时间 / s');
+title('艏摇 / 偏航 Yaw');
+text(0.985, 0.92, ratio_text(metrics.yaw), 'Units', 'normalized', ...
+    'HorizontalAlignment', 'right', 'VerticalAlignment', 'top', ...
+    'FontWeight', 'bold', 'FontSize', 11, 'BackgroundColor', 'w', ...
+    'EdgeColor', [0.70 0.70 0.70], 'Margin', 5);
+
+sgtitle(sprintf(['四级海况下船舶运动强度对比（%d s滑动RMS）\n' ...
+    '一万吨级船舶 vs 一百吨级船舶；H_s = %.2f m'], ...
+    winSec, HsRealized), 'FontWeight', 'bold');
+
+set(fig, 'PaperPositionMode', 'auto');
+print(fig, outputFile, '-dpng', '-r220');
+end
+
+%% ========================================================================
+function metrics = calculate_metrics(largeDeg, smallDeg)
+% Global comparison metrics for each DOF.
+metrics.roll  = metric_pair(largeDeg.roll,  smallDeg.roll);
+metrics.pitch = metric_pair(largeDeg.pitch, smallDeg.pitch);
+metrics.yaw   = metric_pair(largeDeg.yaw,   smallDeg.yaw);
+end
+
+%% ========================================================================
+function out = metric_pair(largeSignal, smallSignal)
+out.largeRms = sqrt(mean(largeSignal.^2));
+out.smallRms = sqrt(mean(smallSignal.^2));
+out.largePeak = max(abs(largeSignal));
+out.smallPeak = max(abs(smallSignal));
+out.largeP95 = percentile_abs(largeSignal, 0.95);
+out.smallP95 = percentile_abs(smallSignal, 0.95);
+out.rmsRatio = out.smallRms / max(out.largeRms, eps);
+out.peakRatio = out.smallPeak / max(out.largePeak, eps);
+end
+
+%% ========================================================================
+function txt = metric_text(m)
+txt = sprintf(['全时程统计\n' ...
+    '1万吨：RMS %.2f°, Peak %.2f°, 95%%|响应| %.2f°\n' ...
+    '100吨：RMS %.2f°, Peak %.2f°, 95%%|响应| %.2f°'], ...
+    m.largeRms, m.largePeak, m.largeP95, ...
+    m.smallRms, m.smallPeak, m.smallP95);
+end
+
+%% ========================================================================
+function txt = ratio_text(m)
+txt = sprintf('100吨 / 1万吨：RMS %.1f×   峰值 %.1f×', ...
+    m.rmsRatio, m.peakRatio);
+end
+
+%% ========================================================================
+function y = moving_rms(x, nwin)
+% Toolbox-free moving RMS using convolution. Output length equals input.
+window = ones(1, nwin) / nwin;
+y = sqrt(conv(x.^2, window, 'same'));
+end
+
+%% ========================================================================
+function p = percentile_abs(x, probability)
+% Toolbox-free percentile of absolute response.
+v = sort(abs(x(:)));
+idx = max(1, min(numel(v), ceil(probability*numel(v))));
+p = v(idx);
+end
+
+%% ========================================================================
+function yl = expand_ylim(x, padRatio)
+xmin = min(x);
+xmax = max(x);
+span = xmax - xmin;
+if span < 1e-9
+    span = max(1, abs(xmax));
+end
+pad = padRatio * span;
+yl = [xmin - pad, xmax + pad];
+end
+
+%% ========================================================================
+function ymax = positive_upper(x)
+ymax = max(x);
+if ymax < 1e-9
+    ymax = 1;
+else
+    ymax = 1.08*ymax;
+end
 end
 
 %% ========================================================================
