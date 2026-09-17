@@ -1,35 +1,35 @@
 function results = run_lowtemp_deck_multiphysics_control()
 %RUN_LOWTEMP_DECK_MULTIPHYSICS_CONTROL
 % Low-temperature deck-equipment flow-solid-thermal coupled disturbance
-% simulation with optimized dual-stage microdynamic compensation control.
+% simulation with band-limited dual-stage microdynamic compensation control.
 %
 % Usage:
 %   results = run_lowtemp_deck_multiphysics_control();
 %
-% One public entry function; all other functions are local to this file.
+% One public entry function; all helper functions are local to this file.
 %
-% Model scope
-%   Fluid: nonstationary gusts, direction meander, turbulence, VIV, spray/slam.
-%   Solid: rigid-base vibration, flexible deck mode, icing-added mass,
-%          actuator reaction, coarse compensation stage and fine micro-stage.
-%   Thermal: ambient cooling, forced convection, spray heat exchange,
-%            structural/actuator thermal nodes, thermal contraction, heater.
-%   Low-T degradation: stiffness/damping/friction drift and actuator lag drift.
-%   Sensing/control: delay, noise, prediction, thermal feedforward, flow/spray
-%                    feedforward, temperature-adaptive model compensation,
-%                    filtered feedback, disturbance observer, actuator lead
-%                    compensation, saturation/rate limits, fine-stage cleanup.
+% Main physical effects:
+%   Fluid   : nonstationary gusts, wind-direction meander, turbulence,
+%             vortex-induced vibration (VIV), random spray/slam impulses.
+%   Solid   : rigid-base deck vibration, flexible deck mode, icing-added mass,
+%             actuator reaction, coarse stage and fine micro-stage.
+%   Thermal : ambient cooling, forced convection, spray heat exchange,
+%             structural/actuator thermal nodes, heater and thermal drift.
+%   Low-T   : stiffness, damping, friction and actuator-lag variation.
+%   Control : delay prediction, filtered output feedback, temperature-adaptive
+%             feedforward, disturbance observer, actuator lead compensation,
+%             band-limited fine-stage compensation and explicit HF roll-off.
 %
-% Performance optimization relative to the previous version
-%   1) Output-error feedback rather than relative-stage error only.
-%   2) Acceleration-aided delay prediction for support motion.
-%   3) Wider but filtered disturbance feedforward.
-%   4) Low-bandwidth disturbance observer for unmeasured residual force.
-%   5) Partial inverse-lag lead compensation for the coarse actuator.
-%   6) Dedicated fine micro-stage to suppress residual 5--30 Hz motion.
-%   7) Explicit high-frequency roll-off to avoid noise injection.
+% Important control design in this revision:
+%   - Coarse stage handles thermal/low-frequency/base-motion compensation.
+%   - Fine stage is NOT allowed to chase broadband sensor noise. It acts only
+%     on an approximately 1.2--7.5 Hz residual band containing the dominant
+%     flexible-deck dynamics.
+%   - Acceleration prediction and flow/spray feedforward are independently
+%     low-pass filtered before entering the controller.
+%   - Welch-averaged ASD is used for publication-quality spectral plots.
 %
-% Every run generates three IEEE-style 600-dpi figures:
+% Every run generates three IEEE-style 600-dpi PNG figures:
 %   LowTempDeck_Multiphysics_Fields.png
 %   LowTempDeck_Control_Response.png
 %   LowTempDeck_Control_Performance.png
@@ -78,40 +78,47 @@ p.frictionVelocity = 4e-5;    % m/s
 p.alphaEff = 7.5e-6;          % 1/K
 p.Lthermal = 0.42;            % m
 
-% Coarse actuator
+% Coarse actuator constraints
 p.Fmax = 4200;                % N
 p.forceRateMax = 8.0e4;       % N/s
 p.tauAct0 = 0.018;            % s
 p.tauColdCoeff = 0.028;
 p.reactionRatio = 0.03;
 
-% Optimized coarse controller
-p.Kp = 8.0e5;                 % N/m
-p.Kd = 8.0e3;                 % N/(m/s)
-p.Ki = 5.0e4;                 % N/(m*s)
+% Coarse controller -- deliberately bandwidth-limited
+p.Kp = 8.5e5;                 % N/m
+p.Kd = 7.0e3;                 % N/(m/s)
+p.Ki = 5.5e4;                 % N/(m*s)
 p.intLimit = 4.0e-4;          % m*s
-p.feedbackFilterTau = 0.015;  % s, suppress sensor/high-frequency injection
-p.commandFilterTau = 0.008;   % s
-p.actuatorLeadFraction = 0.50;% partial inverse-lag compensation
-p.flowFF = 0.85;              % predictable flow-load feedforward fraction
-p.sprayFF = 0.55;             % spray-pressure feedforward fraction
+p.feedbackFilterTau = 0.028;  % s, ~5.7 Hz first-order corner
+p.commandFilterTau = 0.015;   % s, command smoothing
+p.actuatorLeadFraction = 0.22;% conservative partial inverse lag
+p.flowFF = 0.82;
+p.sprayFF = 0.32;
+p.accelFilterTau = 0.025;     % s, acceleration-prediction roll-off
+p.flowFFTau = 0.025;          % s
+p.sprayFFTau = 0.045;         % s, suppress impulsive HF feedforward
 
-% Disturbance observer (low-bandwidth residual force channel)
-p.obsK = 4.0e5;               % N/m
-p.obsD = 2.0e3;               % N/(m/s)
-p.obsTau = 0.080;             % s
-p.obsLimit = 600;              % N
+% Low-bandwidth residual disturbance observer
+p.obsK = 4.5e5;               % N/m
+p.obsD = 1.2e3;               % N/(m/s)
+p.obsTau = 0.120;             % s
+p.obsLimit = 550;              % N
 
 % Measurement / computation latency
 p.sensorDelay = 0.010;        % s
 p.delaySteps = max(1, round(p.sensorDelay/p.dt));
 
-% Fine micro-stage: fast, small-stroke cleanup actuator
+% Fine micro-stage: modal-band cleanup, NOT broadband cancellation
 p.fineStroke = 300e-6;        % m, +/-300 um
-p.fineTau0 = 0.004;           % s
+p.fineTau0 = 0.0035;          % s
 p.fineColdCoeff = 0.012;
-p.fineGain = 0.95;
-p.fineCommandTau = 0.003;     % s, explicit HF roll-off
+p.fineGain = 1.02;
+p.fineBandLowHz = 1.2;        % Hz
+p.fineBandHighHz = 7.5;       % Hz
+p.fineFastTau = 1/(2*pi*p.fineBandHighHz);
+p.fineSlowTau = 1/(2*pi*p.fineBandLowHz);
+p.fineCommandTau = 0.006;     % s, final command smoothing
 
 % Thermal nodes
 p.Cstruct = 2.60e4;           % J/K
@@ -123,12 +130,12 @@ p.Tsea = -1.5;                % degC
 % Icing surrogate
 p.iceRate = 0.028;            % kg/s per unit spray index
 p.iceAreaCoeff = 0.03;
-p.iceSheddingCoeff = 3.0e-4;  % vibration/wind-assisted shedding surrogate
+p.iceSheddingCoeff = 3.0e-4;
 
 %% 2. Common stochastic multiphysics environment
 env = build_environment(p);
 
-%% 3. Baseline and optimized controlled cases
+%% 3. Baseline and compensated cases
 passive = simulate_case(p, env, false);
 controlled = simulate_case(p, env, true);
 
@@ -164,6 +171,9 @@ fprintf('Fine-stage RMS:      %8.3f um\n', metrics.fineRms_um);
 fprintf('Fine-stage peak:     %8.3f um\n', metrics.finePeak_um);
 fprintf('Coarse saturation:   %8.4f %%\n', 100*metrics.saturationFraction);
 fprintf('Fine stroke limit:   %8.4f %%\n', 100*metrics.fineLimitFraction);
+fprintf('Band attenuation:    %6.2f / %6.2f / %6.2f dB\n', ...
+    metrics.bandAttenuation_dB(1), metrics.bandAttenuation_dB(2), ...
+    metrics.bandAttenuation_dB(3));
 fprintf('----------------------------------------------------------------------\n');
 fprintf('Figure 1: %s\n', fileFields);
 fprintf('Figure 2: %s\n', fileResponse);
@@ -171,7 +181,7 @@ fprintf('Figure 3: %s\n', filePerformance);
 fprintf('======================================================================\n\n');
 
 %% 7. Return complete result struct
-results.meta.description = ['Optimized dual-stage flow-solid-thermal coupled ' ...
+results.meta.description = ['Band-limited dual-stage flow-solid-thermal coupled ' ...
     'microdynamic compensation simulation for low-temperature deck equipment'];
 results.meta.seed = 20260917;
 results.meta.dt = p.dt;
@@ -323,9 +333,9 @@ end
 %% ========================================================================
 function out = simulate_case(p, env, enableControl)
 % Coupled flow-solid-thermal simulation with dual-stage compensation.
-% z      : local flexible-deck displacement relative to rigid base
+% z      : flexible-deck displacement relative to rigid base
 % x      : coarse-stage displacement relative to local deck
-% xFine  : fine-stage micro displacement relative to coarse stage
+% xFine  : fine-stage displacement relative to coarse stage
 % y      : absolute precision-point error = base + z + x + xFine + thermal
 
 N = p.N;
@@ -364,6 +374,11 @@ eFilt = 0;
 eVelFilt = 0;
 uDesiredFilt = 0;
 uDesiredPrev = 0;
+supportAccFilt = 0;
+flowFFFilt = 0;
+sprayFFFilt = 0;
+fineFast = 0;
+fineSlow = 0;
 fineCmdFilt = 0;
 
 for k = 1:N-1
@@ -391,25 +406,29 @@ for k = 1:N-1
         j = max(1, k-p.delaySteps);
         latency = (k-j)*dt;
 
-        % Delayed/noisy sensor channels with second-order support prediction.
+        % Delayed/noisy sensing.
         xMeas = x(j) + env.noise.x(j) + 0.08e-6*(Tact(j)-p.Tcal);
         xVelMeas = xVel(j) + env.noise.xVel(j);
         supportMeas = env.base(j) + z(j) + env.noise.support(j);
         supportVelMeas = env.baseVel(j) + zVel(j) + env.noise.supportVel(j);
-        supportAccMeas = env.baseAcc(j) + zAccHist(j) + env.noise.supportAcc(j);
+        supportAccRaw = env.baseAcc(j) + zAccHist(j) + env.noise.supportAcc(j);
+
+        % Acceleration prediction is explicitly bandwidth-limited.
+        aa = dt/(p.accelFilterTau+dt);
+        supportAccFilt = supportAccFilt + aa*(supportAccRaw-supportAccFilt);
 
         xPred = xMeas + xVelMeas*latency;
         xVelPred = xVelMeas;
         supportPred = supportMeas + supportVelMeas*latency ...
-            + 0.5*supportAccMeas*latency^2;
-        supportVelPred = supportVelMeas + supportAccMeas*latency;
+            + 0.5*supportAccFilt*latency^2;
+        supportVelPred = supportVelMeas + supportAccFilt*latency;
 
         % Temperature estimation and thermal feedforward.
         TstructEst = TstructEst + dt/(0.40+dt)* ...
             ((Tstruct(j)+env.noise.temp(j))-TstructEst);
         thermalEst = p.alphaEff*p.Lthermal*(TstructEst-p.Tcal);
 
-        % Coarse-stage reference cancels support + thermal drift.
+        % Coarse-stage reference cancels support and thermal drift.
         xRef = -(supportPred + thermalEst);
         xRefVel = -supportVelPred;
 
@@ -418,12 +437,17 @@ for k = 1:N-1
         kaEst = p.ka0*Eest;
         caEst = p.ca0*(1 + p.stageDampColdCoeff*max(0, -TstructEst-5));
 
-        % Predictable disturbance feedforward.
-        FflowEst = p.flowFF*(env.FdragPayload(j)+env.FvortexPayload(j));
-        FflowEst = FflowEst*(1 + env.noise.flow(j));
-        FsprayEst = p.sprayFF*env.Fspray(j)*(1 + env.noise.spray(j));
+        % Predictable disturbance feedforward with independent roll-off.
+        FflowRaw = p.flowFF*(env.FdragPayload(j)+env.FvortexPayload(j));
+        FflowRaw = FflowRaw*(1 + env.noise.flow(j));
+        aflow = dt/(p.flowFFTau+dt);
+        flowFFFilt = flowFFFilt + aflow*(FflowRaw-flowFFFilt);
 
-        % Absolute output-error feedback. Low-pass states provide HF roll-off.
+        FsprayRaw = p.sprayFF*env.Fspray(j)*(1 + env.noise.spray(j));
+        aspray = dt/(p.sprayFFTau+dt);
+        sprayFFFilt = sprayFFFilt + aspray*(FsprayRaw-sprayFFFilt);
+
+        % Absolute output-error feedback with low-pass roll-off.
         yPredCoarse = supportPred + xPred + thermalEst;
         yVelPredCoarse = supportVelPred + xVelPred;
         e = -yPredCoarse;
@@ -434,8 +458,8 @@ for k = 1:N-1
         integralError = integralError + eFilt*dt;
         integralError = min(p.intLimit, max(-p.intLimit, integralError));
 
-        % Model-based feedforward + residual disturbance observer.
-        uFF = kaEst*xRef + caEst*xRefVel - FflowEst - FsprayEst;
+        % Model feedforward + low-bandwidth disturbance observer.
+        uFF = kaEst*xRef + caEst*xRefVel - flowFFFilt - sprayFFFilt;
         dTarget = p.obsK*eFilt + p.obsD*eVelFilt;
         dObserver = dObserver + dt/(p.obsTau+dt)*(dTarget-dObserver);
         dObserver = min(p.obsLimit, max(-p.obsLimit, dObserver));
@@ -444,7 +468,7 @@ for k = 1:N-1
         uDesired = uFF + p.Kp*eFilt + p.Kd*eVelFilt ...
             + p.Ki*integralError + dObserver;
 
-        % Command prefilter followed by limited inverse-lag lead compensation.
+        % Command prefilter + conservative actuator lead compensation.
         ac = dt/(p.commandFilterTau+dt);
         uDesiredFilt = uDesiredFilt + ac*(uDesired-uDesiredFilt);
         duDesired = (uDesiredFilt-uDesiredPrev)/dt;
@@ -452,8 +476,14 @@ for k = 1:N-1
         uLead = uDesiredFilt + p.actuatorLeadFraction*actuatorTau(k)*duDesired;
         uCmd(k) = min(p.Fmax, max(-p.Fmax, uLead));
 
-        % Fine-stage cleanup uses the predicted residual left by coarse motion.
-        fineTarget = -p.fineGain*yPredCoarse;
+        % Fine-stage band-pass cleanup. Difference of two low-pass states
+        % approximates a stable 1.2--7.5 Hz band-pass residual channel.
+        aFast = dt/(p.fineFastTau+dt);
+        aSlow = dt/(p.fineSlowTau+dt);
+        fineFast = fineFast + aFast*(yPredCoarse-fineFast);
+        fineSlow = fineSlow + aSlow*(yPredCoarse-fineSlow);
+        fineBandResidual = fineFast - fineSlow;
+        fineTarget = -p.fineGain*fineBandResidual;
         fineTarget = min(p.fineStroke, max(-p.fineStroke, fineTarget));
         afine = dt/(p.fineCommandTau+dt);
         fineCmdFilt = fineCmdFilt + afine*(fineTarget-fineCmdFilt);
@@ -470,7 +500,7 @@ for k = 1:N-1
     uAct(k+1) = uAct(k) + dt*du;
     uAct(k+1) = min(p.Fmax, max(-p.Fmax, uAct(k+1)));
 
-    % Fine actuator: inner-loop closed position servo, first-order equivalent.
+    % Fine actuator inner-loop equivalent.
     xFine(k+1) = xFine(k) + dt/(fineTau(k)+dt)*(xFineCmd(k)-xFine(k));
     xFine(k+1) = min(p.fineStroke, max(-p.fineStroke, xFine(k+1)));
 
@@ -574,11 +604,21 @@ metrics.finePeak_um = max(abs(controlled.fineDisplacement))*1e6;
 metrics.saturationFraction = mean(abs(controlled.uActuator) >= 0.98*p.Fmax);
 metrics.fineLimitFraction = mean(abs(controlled.fineDisplacement) >= 0.98*p.fineStroke);
 metrics.controlWorkProxy_J = sum(abs(controlled.uActuator.*controlled.xVel))*p.dt;
+
+[f, asdPassive] = welch_asd(passive.output, p.fs);
+[~, asdControlled] = welch_asd(controlled.output, p.fs);
+bands = [0.10 2.0; 2.0 8.0; 8.0 30.0];
+metrics.bandAttenuation_dB = zeros(1,3);
+for ib = 1:3
+    rp = band_rms_from_asd(f, asdPassive, bands(ib,1), bands(ib,2));
+    rc = band_rms_from_asd(f, asdControlled, bands(ib,1), bands(ib,2));
+    metrics.bandAttenuation_dB(ib) = 20*log10(max(rp,eps)/max(rc,eps));
+end
 end
 
 %% ========================================================================
 function plot_multiphysics_fields(p, env, controlled, outputFile)
-% IEEE-like compact multipanel figure: short titles, Times New Roman, 600 dpi.
+% IEEE-like compact multipanel figure.
 t = p.t;
 C = ieee_colors();
 fig = ieee_figure(17.8, 17.0);
@@ -649,32 +689,38 @@ idxZoom = (t >= t1 & t <= t2);
 
 fig = ieee_figure(17.8, 13.5);
 ax = subplot(2,2,1);
-plot(t, passive_um, '-', 'Color', C.gray, 'LineWidth',0.75); hold on;
+plot(t, passive_um, '-', 'Color', C.gray, 'LineWidth',0.70); hold on;
 plot(t, controlled_um, '-', 'Color', C.blue, 'LineWidth',0.95);
 xlabel('Time (s)'); ylabel('Position error (\mum)'); title('(a) Full-duration response');
-legend('Passive','Compensated','Location','best'); ieee_axes(ax);
+legend('Passive','Compensated','Location','northwest'); ieee_axes(ax);
 
 ax = subplot(2,2,2);
-plot(t(idxZoom), passive_um(idxZoom), '-', 'Color', C.gray, 'LineWidth',0.85); hold on;
+plot(t(idxZoom), passive_um(idxZoom), '-', 'Color', C.gray, 'LineWidth',0.80); hold on;
 plot(t(idxZoom), controlled_um(idxZoom), '-', 'Color', C.blue, 'LineWidth',1.00);
 xlabel('Time (s)'); ylabel('Position error (\mum)'); title('(b) Response near strongest gust');
-legend('Passive','Compensated','Location','best'); ieee_axes(ax);
+legend('Passive','Compensated','Location','northeast'); ieee_axes(ax);
 
 ax = subplot(2,2,3);
 plot(t, rmsPassive, '-', 'Color', C.gray, 'LineWidth',1.0); hold on;
 plot(t, rmsControlled, '-', 'Color', C.blue, 'LineWidth',1.1);
 xlabel('Time (s)'); ylabel('Moving RMS (\mum)'); title('(c) Local motion intensity');
-legend('Passive','Compensated','Location','best'); ieee_axes(ax);
-text(0.98,0.92,sprintf('RMS: %.1f \rightarrow %.1f \mum\nReduction: %.1f dB', ...
-    metrics.passiveRms_um, metrics.controlledRms_um, metrics.attenuation_dB), ...
-    'Units','normalized','HorizontalAlignment','right','VerticalAlignment','top', ...
-    'FontName','Times New Roman','FontSize',8,'BackgroundColor','w');
+legend('Passive','Compensated','Location','northwest'); ieee_axes(ax);
+metricString = sprintf('RMS: %.1f -> %.1f um   |   attenuation: %.1f dB', ...
+    metrics.passiveRms_um, metrics.controlledRms_um, metrics.attenuation_dB);
+text(0.98,0.06,metricString,'Units','normalized', ...
+    'HorizontalAlignment','right','VerticalAlignment','bottom', ...
+    'FontName','Times New Roman','FontSize',7.5,'Interpreter','none', ...
+    'BackgroundColor','w','Margin',2);
 
 ax = subplot(2,2,4);
-plot(t, 100*controlled.uActuator/p.Fmax, '-', 'Color', C.blue, 'LineWidth',0.9); hold on;
-plot(t, 100*controlled.fineDisplacement/p.fineStroke, '-', 'Color', C.red, 'LineWidth',0.9);
-xlabel('Time (s)'); ylabel('Actuator utilization (%)'); title('(d) Coarse/fine actuator utilization');
-legend('Coarse force','Fine stroke','Location','best'); ieee_axes(ax);
+utilWin = max(5, round(0.50/p.dt));
+coarseUtil = moving_rms(100*controlled.uActuator/p.Fmax, utilWin);
+fineUtil = moving_rms(100*controlled.fineDisplacement/p.fineStroke, utilWin);
+plot(t, coarseUtil, '-', 'Color', C.blue, 'LineWidth',1.0); hold on;
+plot(t, fineUtil, '-', 'Color', C.red, 'LineWidth',1.0);
+xlabel('Time (s)'); ylabel('RMS utilization (%)'); title('(d) Coarse/fine actuator utilization');
+legend('Coarse force','Fine stroke','Location','northeast'); ieee_axes(ax);
+ylim([0, max(5, 1.08*max([coarseUtil fineUtil]))]);
 
 ieee_export(fig, outputFile);
 end
@@ -682,54 +728,56 @@ end
 %% ========================================================================
 function plot_control_performance(p, passive, controlled, metrics, outputFile)
 C = ieee_colors();
-[f, asdPassive] = one_sided_asd(passive.output, p.fs);
-[~, asdControlled] = one_sided_asd(controlled.output, p.fs);
-
-bands = [0.10 2.0; 2.0 8.0; 8.0 30.0];
-bandAtt = zeros(1,3);
-for ib = 1:3
-    rp = band_rms_from_asd(f, asdPassive, bands(ib,1), bands(ib,2));
-    rc = band_rms_from_asd(f, asdControlled, bands(ib,1), bands(ib,2));
-    bandAtt(ib) = 20*log10(max(rp,eps)/max(rc,eps));
-end
+[f, asdPassive] = welch_asd(passive.output, p.fs);
+[~, asdControlled] = welch_asd(controlled.output, p.fs);
 
 fig = ieee_figure(17.8, 13.5);
 ax = subplot(2,2,1);
-semilogy(f, asdPassive*1e6, '-', 'Color', C.gray, 'LineWidth',0.85); hold on;
-semilogy(f, asdControlled*1e6, '-', 'Color', C.blue, 'LineWidth',1.00);
+semilogy(f, asdPassive*1e6, '-', 'Color', C.gray, 'LineWidth',1.0); hold on;
+semilogy(f, asdControlled*1e6, '-', 'Color', C.blue, 'LineWidth',1.15);
 xlim([0.05 30]); xlabel('Frequency (Hz)'); ylabel('ASD (\mum/\surdHz)');
-title('(a) Displacement spectrum'); legend('Passive','Compensated','Location','best'); ieee_axes(ax);
+title('(a) Welch-averaged displacement spectrum');
+legend('Passive','Compensated','Location','northeast'); ieee_axes(ax);
 
 ax = subplot(2,2,2);
-B = [metrics.passiveRms_um, metrics.controlledRms_um; ...
-     metrics.passivePeak_um, metrics.controlledPeak_um; ...
-     metrics.passiveP95_um, metrics.controlledP95_um];
-hb = bar(B, 'grouped');
+normalizedMetrics = 100*[1, metrics.controlledRms_um/max(metrics.passiveRms_um,eps); ...
+    1, metrics.controlledPeak_um/max(metrics.passivePeak_um,eps); ...
+    1, metrics.controlledP95_um/max(metrics.passiveP95_um,eps)];
+hb = bar(normalizedMetrics, 'grouped');
 set(hb(1),'FaceColor',C.gray,'EdgeColor','none');
 set(hb(2),'FaceColor',C.blue,'EdgeColor','none');
 set(gca,'XTickLabel',{'RMS','Peak','95%'});
-ylabel('Position error (\mum)'); title('(b) Time-domain metrics');
-legend('Passive','Compensated','Location','best'); ieee_axes(ax);
+ylabel('Normalized level (%)'); title('(b) Time-domain metrics');
+legend('Passive','Compensated','Location','northeast'); ieee_axes(ax);
+ylim([0 112]);
 
 ax = subplot(2,2,3);
-plot(p.t, controlled.Tactuator, '-', 'Color', C.blue, 'LineWidth',0.95); hold on;
-plot(p.t, 1000*controlled.actuatorTau, '--', 'Color', C.red, 'LineWidth',0.95);
-plot(p.t, controlled.frictionScale, '-.', 'Color', C.gold, 'LineWidth',0.95);
-xlabel('Time (s)'); ylabel('State value'); title('(c) Low-temperature actuator states');
-legend('Temperature (^{\circ}C)','Coarse lag (ms)','Friction scale (N)','Location','best'); ieee_axes(ax);
+yyaxis left;
+plot(p.t, controlled.Tactuator, '-', 'Color', C.blue, 'LineWidth',1.0);
+ylabel('Actuator temperature (^{\circ}C)');
+yyaxis right;
+plot(p.t, controlled.actuatorTau/p.tauAct0, '--', 'Color', C.red, 'LineWidth',1.0); hold on;
+plot(p.t, controlled.frictionScale/p.Fc0, '-.', 'Color', C.gold, 'LineWidth',1.0);
+ylabel('Normalized parameter');
+xlabel('Time (s)'); title('(c) Low-temperature actuator states');
+legend('Temperature','Coarse lag','Friction','Location','best'); ieee_axes(ax);
 
 ax = subplot(2,2,4);
-hb = bar(1:3, bandAtt, 0.62);
+hb = bar(1:3, metrics.bandAttenuation_dB, 0.62);
 set(hb,'FaceColor',C.blue,'EdgeColor','none');
 set(gca,'XTick',1:3,'XTickLabel',{'0.1-2 Hz','2-8 Hz','8-30 Hz'});
 ylabel('Attenuation (dB)'); title('(d) Band-wise disturbance attenuation');
 yline(0,'-','Color',[0.25 0.25 0.25],'LineWidth',0.7); ieee_axes(ax);
+yMin = min(-2, floor(min(metrics.bandAttenuation_dB)/5)*5);
+yMax = max(10, ceil(max(metrics.bandAttenuation_dB)/5)*5 + 2);
+ylim([yMin yMax]);
 
 ieee_export(fig, outputFile);
 end
 
 %% ========================================================================
 function C = ieee_colors()
+% Restrained, print-safe palette.
 C.blue = [0.0000 0.4470 0.7410];
 C.red  = [0.8500 0.3250 0.0980];
 C.gold = [0.9290 0.6940 0.1250];
@@ -746,8 +794,8 @@ end
 function ieee_axes(ax)
 set(ax,'FontName','Times New Roman','FontSize',8.5, ...
     'LineWidth',0.75,'TickDir','out','TickLength',[0.015 0.015], ...
-    'Box','on','XGrid','on','YGrid','on','GridAlpha',0.12, ...
-    'MinorGridAlpha',0.06,'Layer','top');
+    'Box','on','XGrid','on','YGrid','on','GridAlpha',0.10, ...
+    'MinorGridAlpha',0.04,'Layer','top');
 set(get(ax,'XLabel'),'FontName','Times New Roman','FontSize',9);
 set(get(ax,'YLabel'),'FontName','Times New Roman','FontSize',9);
 set(get(ax,'Title'),'FontName','Times New Roman','FontSize',9,'FontWeight','normal');
@@ -820,26 +868,46 @@ pval = v(idx);
 end
 
 %% ========================================================================
-function [f, asd] = one_sided_asd(x, fs)
-% Toolbox-free one-sided ASD using a Hann window.
+function [f, asd] = welch_asd(x, fs)
+% Toolbox-free Welch-averaged one-sided ASD.
 x = x(:).';
 x = x - mean(x);
 N = numel(x);
-if N < 4
+if N < 32
     f = 0;
     asd = 0;
     return;
 end
-w = 0.5 - 0.5*cos(2*pi*(0:N-1)/(N-1));
-Nfft = 2^nextpow2(N);
-X = fft(x.*w, Nfft);
-P2 = abs(X).^2/(fs*sum(w.^2));
-P1 = P2(1:Nfft/2+1);
-if numel(P1) > 2
-    P1(2:end-1) = 2*P1(2:end-1);
+
+segLen = min(4096, 2^floor(log2(max(32, N/8))));
+segLen = max(256, min(segLen, N));
+overlap = floor(segLen/2);
+step = segLen-overlap;
+Nfft = max(512, 2^nextpow2(segLen));
+w = 0.5 - 0.5*cos(2*pi*(0:segLen-1)/(segLen-1));
+U = fs*sum(w.^2);
+Pacc = zeros(1,Nfft/2+1);
+count = 0;
+
+for i0 = 1:step:(N-segLen+1)
+    seg = x(i0:i0+segLen-1);
+    seg = seg - mean(seg);
+    X = fft(seg.*w, Nfft);
+    P2 = abs(X).^2/U;
+    P1 = P2(1:Nfft/2+1);
+    if numel(P1) > 2
+        P1(2:end-1) = 2*P1(2:end-1);
+    end
+    Pacc = Pacc + P1;
+    count = count + 1;
 end
+
+if count == 0
+    count = 1;
+end
+Pavg = Pacc/count;
 f = fs*(0:(Nfft/2))/Nfft;
-asd = sqrt(P1);
+asd = sqrt(max(Pavg,0));
 end
 
 %% ========================================================================
