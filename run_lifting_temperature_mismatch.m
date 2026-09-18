@@ -442,7 +442,7 @@ for j = 1:numel(selectedIdx)
 end
 xlabel('时间 (s)'); ylabel('吊载深度 (m)');
 title('(a) 装备布放与回收轨迹');
-legend('Reference','25 ^{\circ}C','0 ^{\circ}C','-20 ^{\circ}C','-40 ^{\circ}C', ...
+legend('参考轨迹','25 ^{\circ}C','0 ^{\circ}C','-20 ^{\circ}C','-40 ^{\circ}C', ...
     'Location','best');
 ieee_axes(ax);
 
@@ -499,7 +499,7 @@ ax = subplot(2,2,1);
 plot(T, M.depthRms_m, '-o', 'Color',C.blue, 'MarkerFaceColor','w', ...
     'LineWidth',1.25, 'MarkerSize',4.5);
 set(gca,'XDir','reverse');
-xlabel('Temperature (^{\circ}C)'); ylabel('Depth-error RMS (m)');
+xlabel('环境温度 (^{\circ}C)'); ylabel('深度误差 RMS (m)');
 title('(a) 深度跟踪性能随温度降低逐渐恶化');
 ieee_axes(ax);
 
@@ -509,7 +509,7 @@ plot(T, M.swingRms_deg, '-o', 'Color',C.blue, 'MarkerFaceColor','w', ...
 plot(T, M.swingPeak_deg, '--s', 'Color',C.red, 'MarkerFaceColor','w', ...
     'LineWidth',1.15, 'MarkerSize',4.2);
 set(gca,'XDir','reverse');
-xlabel('Temperature (^{\circ}C)'); ylabel('Swing angle (deg)');
+xlabel('环境温度 (^{\circ}C)'); ylabel('吊载摆角 (deg)');
 title('(b) 吊载摆动随温度降低增大');
 legend('均方根 RMS','峰值','Location','best');
 ieee_axes(ax);
@@ -518,7 +518,7 @@ ax = subplot(2,2,3);
 plot(T, M.tensionCV_pct, '-o', 'Color',C.gold, 'MarkerFaceColor','w', ...
     'LineWidth',1.25, 'MarkerSize',4.5);
 set(gca,'XDir','reverse');
-xlabel('Temperature (^{\circ}C)'); ylabel('Tension C.V. (%)');
+xlabel('环境温度 (^{\circ}C)'); ylabel('张力变异系数 (%)');
 title('(c) 缆绳张力波动随温度降低增大');
 ieee_axes(ax);
 
@@ -527,9 +527,9 @@ plot(T, M.mismatchIndex, '-o', 'Color',C.red, 'MarkerFaceColor','w', ...
     'LineWidth',1.35, 'MarkerSize',4.8); hold on;
 yline(1.0,'--','Color',C.gray,'LineWidth',0.8);
 set(gca,'XDir','reverse');
-xlabel('Temperature (^{\circ}C)'); ylabel('Normalized mismatch index');
+xlabel('环境温度 (^{\circ}C)'); ylabel('归一化控制失配指数');
 title('(d) 固定控制策略的温度失配程度');
-legend('Mismatch index','25 ^{\circ}C reference','Location','best');
+legend('控制失配指数','25 ^{\circ}C 基准','Location','best');
 ieee_axes(ax);
 
 ieee_export(fig, outputFile);
@@ -548,7 +548,7 @@ ax = subplot(2,2,1);
 plot(T, M.winchTau_s/p.winchTau0, '-o', 'Color',C.red, ...
     'MarkerFaceColor','w','LineWidth',1.25,'MarkerSize',4.5);
 set(gca,'XDir','reverse');
-xlabel('Temperature (^{\circ}C)'); ylabel('Normalized time constant');
+xlabel('环境温度 (^{\circ}C)'); ylabel('归一化时间常数');
 title('(a) 绞车响应随温度降低变慢');
 ieee_axes(ax);
 
@@ -556,7 +556,7 @@ ax = subplot(2,2,2);
 plot(T, M.winchGain/p.winchGain0, '-o', 'Color',C.blue, ...
     'MarkerFaceColor','w','LineWidth',1.25,'MarkerSize',4.5);
 set(gca,'XDir','reverse');
-xlabel('Temperature (^{\circ}C)'); ylabel('Normalized drive gain');
+xlabel('环境温度 (^{\circ}C)'); ylabel('归一化驱动增益');
 title('(b) 有效驱动能力随温度降低下降');
 ieee_axes(ax);
 
@@ -564,7 +564,7 @@ ax = subplot(2,2,3);
 plot(T, M.deadZone_mps, '-o', 'Color',C.gold, ...
     'MarkerFaceColor','w','LineWidth',1.25,'MarkerSize',4.5);
 set(gca,'XDir','reverse');
-xlabel('Temperature (^{\circ}C)'); ylabel('Equivalent dead zone (m/s)');
+xlabel('环境温度 (^{\circ}C)'); ylabel('等效死区 (m/s)');
 title('(c) 摩擦与死区随温度降低增大');
 ieee_axes(ax);
 
@@ -576,7 +576,7 @@ plot(T, M.ropeDampingRatio, '--s', 'Color',C.gold, ...
 plot(T, M.swingDampingRatio, '-.^', 'Color',C.red, ...
     'MarkerFaceColor','w','LineWidth',1.15,'MarkerSize',4.2);
 set(gca,'XDir','reverse');
-xlabel('Temperature (^{\circ}C)'); ylabel('Normalized parameter');
+xlabel('环境温度 (^{\circ}C)'); ylabel('归一化参数');
 title('(d) 缆绳与吊摆动力学参数漂移');
 legend('缆绳轴向刚度','缆绳轴向阻尼','吊摆等效阻尼','Location','best');
 ieee_axes(ax);
