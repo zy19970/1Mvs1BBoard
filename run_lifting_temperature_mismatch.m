@@ -440,8 +440,8 @@ for j = 1:numel(selectedIdx)
     plot(p.t, cases{selectedIdx(j)}.payloadDepth, styles{j}, ...
         'Color', colors(j,:), 'LineWidth',1.0);
 end
-xlabel('Time (s)'); ylabel('Payload depth (m)');
-title('(a) Deployment and recovery trajectory');
+xlabel('时间 (s)'); ylabel('吊载深度 (m)');
+title('(a) 装备布放与回收轨迹');
 legend('Reference','25 ^{\circ}C','0 ^{\circ}C','-20 ^{\circ}C','-40 ^{\circ}C', ...
     'Location','best');
 ieee_axes(ax);
@@ -451,8 +451,8 @@ for j = 1:numel(selectedIdx)
     plot(p.t, cases{selectedIdx(j)}.depthError, styles{j}, ...
         'Color', colors(j,:), 'LineWidth',1.0); hold on;
 end
-xlabel('Time (s)'); ylabel('Depth tracking error (m)');
-title('(b) Tracking error with identical controller');
+xlabel('时间 (s)'); ylabel('深度跟踪误差 (m)');
+title('(b) 同一控制策略下的深度跟踪误差');
 legend('25 ^{\circ}C','0 ^{\circ}C','-20 ^{\circ}C','-40 ^{\circ}C', ...
     'Location','best');
 ieee_axes(ax);
@@ -462,8 +462,8 @@ for j = 1:numel(selectedIdx)
     plot(p.t, rad2deg(cases{selectedIdx(j)}.swingAngle), styles{j}, ...
         'Color', colors(j,:), 'LineWidth',1.0); hold on;
 end
-xlabel('Time (s)'); ylabel('Payload swing angle (deg)');
-title('(c) Suspended-load swing');
+xlabel('时间 (s)'); ylabel('吊载摆角 (deg)');
+title('(c) 吊载摆动响应');
 legend('25 ^{\circ}C','0 ^{\circ}C','-20 ^{\circ}C','-40 ^{\circ}C', ...
     'Location','best');
 ieee_axes(ax);
@@ -476,8 +476,8 @@ for j = 1:numel(selectedIdx)
     plot(p.t, (c.tension-meanT)/1000, styles{j}, ...
         'Color', colors(j,:), 'LineWidth',0.95); hold on;
 end
-xlabel('Time (s)'); ylabel('Tension fluctuation (kN)');
-title('(d) Rope-tension fluctuation');
+xlabel('时间 (s)'); ylabel('缆绳张力波动 (kN)');
+title('(d) 缆绳张力波动');
 legend('25 ^{\circ}C','0 ^{\circ}C','-20 ^{\circ}C','-40 ^{\circ}C', ...
     'Location','best');
 ieee_axes(ax);
@@ -500,7 +500,7 @@ plot(T, M.depthRms_m, '-o', 'Color',C.blue, 'MarkerFaceColor','w', ...
     'LineWidth',1.25, 'MarkerSize',4.5);
 set(gca,'XDir','reverse');
 xlabel('Temperature (^{\circ}C)'); ylabel('Depth-error RMS (m)');
-title('(a) Depth-tracking degradation');
+title('(a) 深度跟踪性能随温度降低逐渐恶化');
 ieee_axes(ax);
 
 ax = subplot(2,2,2);
@@ -510,8 +510,8 @@ plot(T, M.swingPeak_deg, '--s', 'Color',C.red, 'MarkerFaceColor','w', ...
     'LineWidth',1.15, 'MarkerSize',4.2);
 set(gca,'XDir','reverse');
 xlabel('Temperature (^{\circ}C)'); ylabel('Swing angle (deg)');
-title('(b) Suspended-load swing growth');
-legend('RMS','Peak','Location','best');
+title('(b) 吊载摆动随温度降低增大');
+legend('均方根 RMS','峰值','Location','best');
 ieee_axes(ax);
 
 ax = subplot(2,2,3);
@@ -519,7 +519,7 @@ plot(T, M.tensionCV_pct, '-o', 'Color',C.gold, 'MarkerFaceColor','w', ...
     'LineWidth',1.25, 'MarkerSize',4.5);
 set(gca,'XDir','reverse');
 xlabel('Temperature (^{\circ}C)'); ylabel('Tension C.V. (%)');
-title('(c) Rope-tension fluctuation');
+title('(c) 缆绳张力波动随温度降低增大');
 ieee_axes(ax);
 
 ax = subplot(2,2,4);
@@ -528,7 +528,7 @@ plot(T, M.mismatchIndex, '-o', 'Color',C.red, 'MarkerFaceColor','w', ...
 yline(1.0,'--','Color',C.gray,'LineWidth',0.8);
 set(gca,'XDir','reverse');
 xlabel('Temperature (^{\circ}C)'); ylabel('Normalized mismatch index');
-title('(d) Fixed-controller mismatch index');
+title('(d) 固定控制策略的温度失配程度');
 legend('Mismatch index','25 ^{\circ}C reference','Location','best');
 ieee_axes(ax);
 
@@ -549,7 +549,7 @@ plot(T, M.winchTau_s/p.winchTau0, '-o', 'Color',C.red, ...
     'MarkerFaceColor','w','LineWidth',1.25,'MarkerSize',4.5);
 set(gca,'XDir','reverse');
 xlabel('Temperature (^{\circ}C)'); ylabel('Normalized time constant');
-title('(a) Winch response becomes slower');
+title('(a) 绞车响应随温度降低变慢');
 ieee_axes(ax);
 
 ax = subplot(2,2,2);
@@ -557,7 +557,7 @@ plot(T, M.winchGain/p.winchGain0, '-o', 'Color',C.blue, ...
     'MarkerFaceColor','w','LineWidth',1.25,'MarkerSize',4.5);
 set(gca,'XDir','reverse');
 xlabel('Temperature (^{\circ}C)'); ylabel('Normalized drive gain');
-title('(b) Available drive authority decreases');
+title('(b) 有效驱动能力随温度降低下降');
 ieee_axes(ax);
 
 ax = subplot(2,2,3);
@@ -565,7 +565,7 @@ plot(T, M.deadZone_mps, '-o', 'Color',C.gold, ...
     'MarkerFaceColor','w','LineWidth',1.25,'MarkerSize',4.5);
 set(gca,'XDir','reverse');
 xlabel('Temperature (^{\circ}C)'); ylabel('Equivalent dead zone (m/s)');
-title('(c) Friction/dead-zone growth');
+title('(c) 摩擦与死区随温度降低增大');
 ieee_axes(ax);
 
 ax = subplot(2,2,4);
@@ -577,8 +577,8 @@ plot(T, M.swingDampingRatio, '-.^', 'Color',C.red, ...
     'MarkerFaceColor','w','LineWidth',1.15,'MarkerSize',4.2);
 set(gca,'XDir','reverse');
 xlabel('Temperature (^{\circ}C)'); ylabel('Normalized parameter');
-title('(d) Cable and swing-dynamics drift');
-legend('Rope stiffness','Rope damping','Swing damping','Location','best');
+title('(d) 缆绳与吊摆动力学参数漂移');
+legend('缆绳轴向刚度','缆绳轴向阻尼','吊摆等效阻尼','Location','best');
 ieee_axes(ax);
 
 ieee_export(fig, outputFile);
@@ -642,12 +642,12 @@ set(ax,'FontName','Times New Roman','FontSize',8.5, ...
     'LineWidth',0.75,'TickDir','out','TickLength',[0.015 0.015], ...
     'Box','on','XGrid','on','YGrid','on','GridAlpha',0.12, ...
     'MinorGridAlpha',0.06,'Layer','top');
-set(get(ax,'XLabel'),'FontName','Times New Roman','FontSize',9);
-set(get(ax,'YLabel'),'FontName','Times New Roman','FontSize',9);
-set(get(ax,'Title'),'FontName','Times New Roman','FontSize',9,'FontWeight','normal');
+set(get(ax,'XLabel'),'FontName','SimSun','FontSize',9);
+set(get(ax,'YLabel'),'FontName','SimSun','FontSize',9);
+set(get(ax,'Title'),'FontName','SimSun','FontSize',9,'FontWeight','normal');
 lgd = findobj(ax.Parent,'Type','Legend');
 if ~isempty(lgd)
-    set(lgd,'FontName','Times New Roman','FontSize',7.5,'Box','off');
+    set(lgd,'FontName','SimSun','FontSize',7.5,'Box','off');
 end
 end
 
