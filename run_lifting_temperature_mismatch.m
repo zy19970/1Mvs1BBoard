@@ -75,7 +75,7 @@ p.ropeCTempCoeff = 0.0040;    % rope damping relative change per degC
 p.swingDampTempCoeff = 0.014; % effective swing damping degradation per degC
 
 % Temperature sweep
-temps = [25 10 0 -10 -20 -30 -40];
+temps = 25:-1:-40;             % 1 degC interval, 66 temperature cases
 
 %% 2. Build one common ship-motion disturbance record
 % Exactly the same exogenous sea excitation is reused at every temperature.
@@ -420,11 +420,11 @@ end
 
 %% ========================================================================
 function plot_operation_comparison(p, env, ref, cases, temps, outputFile)
-% Selected temperatures show how the SAME strategy progressively departs from
-% the warm reference behavior.
+% Representative time histories. Continuous temperature evolution is shown
+% separately in the 1-degC sweep figure to avoid unreadable curve stacking.
 
 C = ieee_colors();
-selectedT = [25 0 -20 -40];
+selectedT = [25 -10 -25 -40];
 selectedIdx = zeros(size(selectedT));
 for j = 1:numel(selectedT)
     [~, selectedIdx(j)] = min(abs(temps-selectedT(j)));
@@ -432,39 +432,46 @@ end
 styles = {'-','--','-.',':'};
 colors = [C.gray; C.blue; C.gold; C.red];
 
-fig = ieee_figure(17.8, 14.0);
+% Moving RMS windows make temperature-related differences visible without
+% hiding the physical time evolution in dense oscillatory traces.
+nSwing = max(5, round(8.0/p.dt));
+nTension = max(5, round(8.0/p.dt));
+
+fig = ieee_figure(22.0, 15.8);
 
 ax = subplot(2,2,1);
-plot(p.t, ref.depth, 'k-', 'LineWidth',1.15); hold on;
+plot(p.t, ref.depth, 'k-', 'LineWidth',1.55); hold on;
 for j = 1:numel(selectedIdx)
     plot(p.t, cases{selectedIdx(j)}.payloadDepth, styles{j}, ...
-        'Color', colors(j,:), 'LineWidth',1.0);
+        'Color', colors(j,:), 'LineWidth',1.30);
 end
 xlabel('时间 (s)'); ylabel('吊载深度 (m)');
 title('(a) 装备布放与回收轨迹');
-legend('参考轨迹','25 ^{\circ}C','0 ^{\circ}C','-20 ^{\circ}C','-40 ^{\circ}C', ...
+legend('参考轨迹','25 ^{\circ}C','-10 ^{\circ}C','-25 ^{\circ}C','-40 ^{\circ}C', ...
     'Location','best');
 ieee_axes(ax);
 
 ax = subplot(2,2,2);
 for j = 1:numel(selectedIdx)
     plot(p.t, cases{selectedIdx(j)}.depthError, styles{j}, ...
-        'Color', colors(j,:), 'LineWidth',1.0); hold on;
+        'Color', colors(j,:), 'LineWidth',1.20); hold on;
 end
+yline(0,'-','Color',[0.45 0.45 0.45],'LineWidth',0.7);
 xlabel('时间 (s)'); ylabel('深度跟踪误差 (m)');
 title('(b) 同一控制策略下的深度跟踪误差');
-legend('25 ^{\circ}C','0 ^{\circ}C','-20 ^{\circ}C','-40 ^{\circ}C', ...
+legend('25 ^{\circ}C','-10 ^{\circ}C','-25 ^{\circ}C','-40 ^{\circ}C', ...
     'Location','best');
 ieee_axes(ax);
 
 ax = subplot(2,2,3);
 for j = 1:numel(selectedIdx)
-    plot(p.t, rad2deg(cases{selectedIdx(j)}.swingAngle), styles{j}, ...
-        'Color', colors(j,:), 'LineWidth',1.0); hold on;
+    swingAbs = abs(rad2deg(cases{selectedIdx(j)}.swingAngle));
+    swingRms = moving_rms_local(swingAbs, nSwing);
+    plot(p.t, swingRms, styles{j}, 'Color', colors(j,:), 'LineWidth',1.35); hold on;
 end
-xlabel('时间 (s)'); ylabel('吊载摆角 (deg)');
-title('(c) 吊载摆动响应');
-legend('25 ^{\circ}C','0 ^{\circ}C','-20 ^{\circ}C','-40 ^{\circ}C', ...
+xlabel('时间 (s)'); ylabel('摆角滑动 RMS (deg)');
+title('(c) 吊载摆动强度（8 s 滑动 RMS）');
+legend('25 ^{\circ}C','-10 ^{\circ}C','-25 ^{\circ}C','-40 ^{\circ}C', ...
     'Location','best');
 ieee_axes(ax);
 
@@ -473,12 +480,13 @@ for j = 1:numel(selectedIdx)
     c = cases{selectedIdx(j)};
     idxOp = (p.t >= 20 & p.t <= 330);
     meanT = mean(c.tension(idxOp));
-    plot(p.t, (c.tension-meanT)/1000, styles{j}, ...
-        'Color', colors(j,:), 'LineWidth',0.95); hold on;
+    fluct = (c.tension-meanT)/1000;
+    tensionRms = moving_rms_local(fluct, nTension);
+    plot(p.t, tensionRms, styles{j}, 'Color', colors(j,:), 'LineWidth',1.35); hold on;
 end
-xlabel('时间 (s)'); ylabel('缆绳张力波动 (kN)');
-title('(d) 缆绳张力波动');
-legend('25 ^{\circ}C','0 ^{\circ}C','-20 ^{\circ}C','-40 ^{\circ}C', ...
+xlabel('时间 (s)'); ylabel('张力波动滑动 RMS (kN)');
+title('(d) 缆绳张力波动强度（8 s 滑动 RMS）');
+legend('25 ^{\circ}C','-10 ^{\circ}C','-25 ^{\circ}C','-40 ^{\circ}C', ...
     'Location','best');
 ieee_axes(ax);
 
@@ -487,49 +495,55 @@ end
 
 %% ========================================================================
 function plot_temperature_sweep(M, outputFile)
-% Temperature is plotted warm -> cold from left to right to make the
-% progressive mismatch visually obvious.
+% 1-degC sweep from 25 to -40 degC. Lines show the continuous trend; sparse
+% markers are used only every 5 degC so the plot remains readable.
 
 C = ieee_colors();
 T = M.temperature_C;
+markerIdx = 1:5:numel(T);
 
-fig = ieee_figure(17.8, 13.8);
+fig = ieee_figure(22.0, 15.8);
 
 ax = subplot(2,2,1);
-plot(T, M.depthRms_m, '-o', 'Color',C.blue, 'MarkerFaceColor','w', ...
-    'LineWidth',1.25, 'MarkerSize',4.5);
+plot(T, M.depthRms_m, '-', 'Color',C.blue, 'LineWidth',1.55); hold on;
+plot(T(markerIdx), M.depthRms_m(markerIdx), 'o', 'Color',C.blue, ...
+    'MarkerFaceColor','w','MarkerSize',4.2,'LineWidth',1.0);
 set(gca,'XDir','reverse');
 xlabel('环境温度 (^{\circ}C)'); ylabel('深度误差 RMS (m)');
-title('(a) 深度跟踪性能随温度降低逐渐恶化');
+title('(a) 深度跟踪误差随温度变化');
 ieee_axes(ax);
 
 ax = subplot(2,2,2);
-plot(T, M.swingRms_deg, '-o', 'Color',C.blue, 'MarkerFaceColor','w', ...
-    'LineWidth',1.25, 'MarkerSize',4.5); hold on;
-plot(T, M.swingPeak_deg, '--s', 'Color',C.red, 'MarkerFaceColor','w', ...
-    'LineWidth',1.15, 'MarkerSize',4.2);
+plot(T, M.swingRms_deg, '-', 'Color',C.blue, 'LineWidth',1.50); hold on;
+plot(T, M.swingPeak_deg, '--', 'Color',C.red, 'LineWidth',1.45);
+plot(T(markerIdx), M.swingRms_deg(markerIdx), 'o', 'Color',C.blue, ...
+    'MarkerFaceColor','w','MarkerSize',4.0,'LineWidth',0.9);
+plot(T(markerIdx), M.swingPeak_deg(markerIdx), 's', 'Color',C.red, ...
+    'MarkerFaceColor','w','MarkerSize',3.8,'LineWidth',0.9);
 set(gca,'XDir','reverse');
 xlabel('环境温度 (^{\circ}C)'); ylabel('吊载摆角 (deg)');
-title('(b) 吊载摆动随温度降低增大');
+title('(b) 吊载摆动随温度变化');
 legend('均方根 RMS','峰值','Location','best');
 ieee_axes(ax);
 
 ax = subplot(2,2,3);
-plot(T, M.tensionCV_pct, '-o', 'Color',C.gold, 'MarkerFaceColor','w', ...
-    'LineWidth',1.25, 'MarkerSize',4.5);
+plot(T, M.tensionCV_pct, '-', 'Color',C.gold, 'LineWidth',1.55); hold on;
+plot(T(markerIdx), M.tensionCV_pct(markerIdx), 'o', 'Color',C.gold, ...
+    'MarkerFaceColor','w','MarkerSize',4.2,'LineWidth',1.0);
 set(gca,'XDir','reverse');
 xlabel('环境温度 (^{\circ}C)'); ylabel('张力变异系数 (%)');
-title('(c) 缆绳张力波动随温度降低增大');
+title('(c) 缆绳张力波动随温度变化');
 ieee_axes(ax);
 
 ax = subplot(2,2,4);
-plot(T, M.mismatchIndex, '-o', 'Color',C.red, 'MarkerFaceColor','w', ...
-    'LineWidth',1.35, 'MarkerSize',4.8); hold on;
-yline(1.0,'--','Color',C.gray,'LineWidth',0.8);
+plot(T, M.mismatchIndex, '-', 'Color',C.red, 'LineWidth',1.65); hold on;
+plot(T(markerIdx), M.mismatchIndex(markerIdx), 'o', 'Color',C.red, ...
+    'MarkerFaceColor','w','MarkerSize',4.4,'LineWidth',1.0);
+yline(1.0,'--','Color',C.gray,'LineWidth',0.9);
 set(gca,'XDir','reverse');
 xlabel('环境温度 (^{\circ}C)'); ylabel('归一化控制失配指数');
 title('(d) 固定控制策略的温度失配程度');
-legend('控制失配指数','25 ^{\circ}C 基准','Location','best');
+legend('控制失配指数','25 ^{\circ}C 基准','Location','northwest');
 ieee_axes(ax);
 
 ieee_export(fig, outputFile);
@@ -537,47 +551,50 @@ end
 
 %% ========================================================================
 function plot_parameter_drift(M, p, outputFile)
-% Explain WHY the same controller becomes increasingly mismatched.
+% Plant-parameter drift at 1-degC resolution. No dense point markers.
 
 C = ieee_colors();
 T = M.temperature_C;
+markerIdx = 1:5:numel(T);
 
-fig = ieee_figure(17.8, 13.8);
+fig = ieee_figure(22.0, 15.8);
 
 ax = subplot(2,2,1);
-plot(T, M.winchTau_s/p.winchTau0, '-o', 'Color',C.red, ...
-    'MarkerFaceColor','w','LineWidth',1.25,'MarkerSize',4.5);
+y = M.winchTau_s/p.winchTau0;
+plot(T, y, '-', 'Color',C.red, 'LineWidth',1.55); hold on;
+plot(T(markerIdx), y(markerIdx), 'o', 'Color',C.red, ...
+    'MarkerFaceColor','w','MarkerSize',4.0,'LineWidth',0.9);
 set(gca,'XDir','reverse');
 xlabel('环境温度 (^{\circ}C)'); ylabel('归一化时间常数');
-title('(a) 绞车响应随温度降低变慢');
+title('(a) 绞车响应时间常数');
 ieee_axes(ax);
 
 ax = subplot(2,2,2);
-plot(T, M.winchGain/p.winchGain0, '-o', 'Color',C.blue, ...
-    'MarkerFaceColor','w','LineWidth',1.25,'MarkerSize',4.5);
+y = M.winchGain/p.winchGain0;
+plot(T, y, '-', 'Color',C.blue, 'LineWidth',1.55); hold on;
+plot(T(markerIdx), y(markerIdx), 'o', 'Color',C.blue, ...
+    'MarkerFaceColor','w','MarkerSize',4.0,'LineWidth',0.9);
 set(gca,'XDir','reverse');
 xlabel('环境温度 (^{\circ}C)'); ylabel('归一化驱动增益');
-title('(b) 有效驱动能力随温度降低下降');
+title('(b) 有效驱动能力');
 ieee_axes(ax);
 
 ax = subplot(2,2,3);
-plot(T, M.deadZone_mps, '-o', 'Color',C.gold, ...
-    'MarkerFaceColor','w','LineWidth',1.25,'MarkerSize',4.5);
+plot(T, M.deadZone_mps, '-', 'Color',C.gold, 'LineWidth',1.55); hold on;
+plot(T(markerIdx), M.deadZone_mps(markerIdx), 'o', 'Color',C.gold, ...
+    'MarkerFaceColor','w','MarkerSize',4.0,'LineWidth',0.9);
 set(gca,'XDir','reverse');
 xlabel('环境温度 (^{\circ}C)'); ylabel('等效死区 (m/s)');
-title('(c) 摩擦与死区随温度降低增大');
+title('(c) 低温摩擦与等效死区');
 ieee_axes(ax);
 
 ax = subplot(2,2,4);
-plot(T, M.ropeStiffnessRatio, '-o', 'Color',C.blue, ...
-    'MarkerFaceColor','w','LineWidth',1.15,'MarkerSize',4.2); hold on;
-plot(T, M.ropeDampingRatio, '--s', 'Color',C.gold, ...
-    'MarkerFaceColor','w','LineWidth',1.15,'MarkerSize',4.2);
-plot(T, M.swingDampingRatio, '-.^', 'Color',C.red, ...
-    'MarkerFaceColor','w','LineWidth',1.15,'MarkerSize',4.2);
+plot(T, M.ropeStiffnessRatio, '-', 'Color',C.blue, 'LineWidth',1.45); hold on;
+plot(T, M.ropeDampingRatio, '--', 'Color',C.gold, 'LineWidth',1.45);
+plot(T, M.swingDampingRatio, '-.', 'Color',C.red, 'LineWidth',1.45);
 set(gca,'XDir','reverse');
 xlabel('环境温度 (^{\circ}C)'); ylabel('归一化参数');
-title('(d) 缆绳与吊摆动力学参数漂移');
+title('(d) 缆绳与吊摆动力学参数');
 legend('缆绳轴向刚度','缆绳轴向阻尼','吊摆等效阻尼','Location','best');
 ieee_axes(ax);
 
@@ -618,6 +635,13 @@ dx(end) = (x(end)-x(end-1))/dt;
 end
 
 %% ========================================================================
+function y = moving_rms_local(x, nwin)
+nwin = max(1, round(nwin));
+window = ones(1,nwin)/nwin;
+y = sqrt(conv(x.^2, window, 'same'));
+end
+
+%% ========================================================================
 function val = rms_local(x)
 val = sqrt(mean(x.^2));
 end
@@ -638,16 +662,16 @@ end
 
 %% ========================================================================
 function ieee_axes(ax)
-set(ax,'FontName','Times New Roman','FontSize',8.5, ...
-    'LineWidth',0.75,'TickDir','out','TickLength',[0.015 0.015], ...
-    'Box','on','XGrid','on','YGrid','on','GridAlpha',0.12, ...
-    'MinorGridAlpha',0.06,'Layer','top');
-set(get(ax,'XLabel'),'FontName','SimSun','FontSize',9);
-set(get(ax,'YLabel'),'FontName','SimSun','FontSize',9);
-set(get(ax,'Title'),'FontName','SimSun','FontSize',9,'FontWeight','normal');
+set(ax,'FontName','Times New Roman','FontSize',10.0, ...
+    'LineWidth',0.85,'TickDir','out','TickLength',[0.014 0.014], ...
+    'Box','on','XGrid','on','YGrid','on','GridAlpha',0.11, ...
+    'MinorGridAlpha',0.05,'Layer','top');
+set(get(ax,'XLabel'),'FontName','Microsoft YaHei','FontSize',11);
+set(get(ax,'YLabel'),'FontName','Microsoft YaHei','FontSize',11);
+set(get(ax,'Title'),'FontName','Microsoft YaHei','FontSize',11.2,'FontWeight','normal');
 lgd = findobj(ax.Parent,'Type','Legend');
 if ~isempty(lgd)
-    set(lgd,'FontName','SimSun','FontSize',7.5,'Box','off');
+    set(lgd,'FontName','Microsoft YaHei','FontSize',9.2,'Box','off');
 end
 end
 
