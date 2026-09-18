@@ -429,7 +429,7 @@ selectedIdx = zeros(size(selectedT));
 for j = 1:numel(selectedT)
     [~, selectedIdx(j)] = min(abs(temps-selectedT(j)));
 end
-styles = {'-','--','-.',':'};
+styles = {'-','-','-','-'};
 colors = [C.gray; C.blue; C.gold; C.red];
 
 % Moving RMS windows make temperature-related differences visible without
@@ -443,7 +443,7 @@ ax = subplot(2,2,1);
 plot(p.t, ref.depth, 'k-', 'LineWidth',1.55); hold on;
 for j = 1:numel(selectedIdx)
     plot(p.t, cases{selectedIdx(j)}.payloadDepth, styles{j}, ...
-        'Color', colors(j,:), 'LineWidth',1.30);
+        'Color', colors(j,:), 'LineWidth',1.55);
 end
 xlabel('时间 (s)'); ylabel('吊载深度 (m)');
 title('(a) 装备布放与回收轨迹');
@@ -454,7 +454,7 @@ ieee_axes(ax);
 ax = subplot(2,2,2);
 for j = 1:numel(selectedIdx)
     plot(p.t, cases{selectedIdx(j)}.depthError, styles{j}, ...
-        'Color', colors(j,:), 'LineWidth',1.20); hold on;
+        'Color', colors(j,:), 'LineWidth',1.40); hold on;
 end
 yline(0,'-','Color',[0.45 0.45 0.45],'LineWidth',0.7);
 xlabel('时间 (s)'); ylabel('深度跟踪误差 (m)');
@@ -467,7 +467,7 @@ ax = subplot(2,2,3);
 for j = 1:numel(selectedIdx)
     swingAbs = abs(rad2deg(cases{selectedIdx(j)}.swingAngle));
     swingRms = moving_rms_local(swingAbs, nSwing);
-    plot(p.t, swingRms, styles{j}, 'Color', colors(j,:), 'LineWidth',1.35); hold on;
+    plot(p.t, swingRms, styles{j}, 'Color', colors(j,:), 'LineWidth',1.50); hold on;
 end
 xlabel('时间 (s)'); ylabel('摆角滑动 RMS (deg)');
 title('(c) 吊载摆动强度（8 s 滑动 RMS）');
@@ -515,7 +515,7 @@ ieee_axes(ax);
 
 ax = subplot(2,2,2);
 plot(T, M.swingRms_deg, '-', 'Color',C.blue, 'LineWidth',1.50); hold on;
-plot(T, M.swingPeak_deg, '--', 'Color',C.red, 'LineWidth',1.45);
+plot(T, M.swingPeak_deg, '-', 'Color',C.red, 'LineWidth',1.45);
 plot(T(markerIdx), M.swingRms_deg(markerIdx), 'o', 'Color',C.blue, ...
     'MarkerFaceColor','w','MarkerSize',4.0,'LineWidth',0.9);
 plot(T(markerIdx), M.swingPeak_deg(markerIdx), 's', 'Color',C.red, ...
@@ -539,7 +539,7 @@ ax = subplot(2,2,4);
 plot(T, M.mismatchIndex, '-', 'Color',C.red, 'LineWidth',1.65); hold on;
 plot(T(markerIdx), M.mismatchIndex(markerIdx), 'o', 'Color',C.red, ...
     'MarkerFaceColor','w','MarkerSize',4.4,'LineWidth',1.0);
-yline(1.0,'--','Color',C.gray,'LineWidth',0.9);
+yline(1.0,'-','Color',C.gray,'LineWidth',0.9);
 set(gca,'XDir','reverse');
 xlabel('环境温度 (^{\circ}C)'); ylabel('归一化控制失配指数');
 title('(d) 固定控制策略的温度失配程度');
@@ -590,8 +590,8 @@ ieee_axes(ax);
 
 ax = subplot(2,2,4);
 plot(T, M.ropeStiffnessRatio, '-', 'Color',C.blue, 'LineWidth',1.45); hold on;
-plot(T, M.ropeDampingRatio, '--', 'Color',C.gold, 'LineWidth',1.45);
-plot(T, M.swingDampingRatio, '-.', 'Color',C.red, 'LineWidth',1.45);
+plot(T, M.ropeDampingRatio, '-', 'Color',C.gold, 'LineWidth',1.45);
+plot(T, M.swingDampingRatio, '-', 'Color',C.red, 'LineWidth',1.45);
 set(gca,'XDir','reverse');
 xlabel('环境温度 (^{\circ}C)'); ylabel('归一化参数');
 title('(d) 缆绳与吊摆动力学参数');
